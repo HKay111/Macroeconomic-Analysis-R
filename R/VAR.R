@@ -106,10 +106,6 @@ normality.test(var_model)
 # 4. Check for structural breaks in the residuals
 plot(stability(var_model))
 
-# A wild bootstrap can be more robust to heteroskedasticity
-irf_wild <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95, boot.type = "wild")
-plot(irf_wild)
-
 # Exchange Rate
 a <- var_model$varresult$d_exc_rate
 a_f <- formula(a)
