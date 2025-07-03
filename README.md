@@ -129,6 +129,20 @@ VARselect(var_data, lag.max = 10, type = "const")
 
 We proceeded with a `VAR(2)` model.
 
+## 5. VAR Model Diagnostics
+
+Before interpreting the model, we must check if its residuals are well-behaved.
+
+-   **Serial Correlation (`serial.test`)**: The p-value was 0.385. **Success!** We cannot reject the null of no serial correlation.
+-   **Heteroskedasticity (`arch.test`)**: The p-value was 0.0005. **Problem!** We reject the null of no heteroskedasticity. The residuals' variance is not constant.
+-   **Normality (`normality.test`)**: The p-value was less than 2.2e-16. **Problem!** The residuals are not normally distributed.
+
+The presence of heteroskedasticity means the standard errors from the default `summary(var_model)` are unreliable. **We must use robust standard errors for valid inference.** A plot of the residuals for each equation visually confirms the non-constant variance.
+
+![VAR Residual Plots](./plots/var_residuals.png)
+
+### 6. VAR Results: Impulse Responses and Causality
+
 <details>
 
 <summary>Click to view the full VAR(2) model summary</summary>
@@ -170,20 +184,6 @@ This table summarizes the results of the Granger causality tests, which check if
 *Notes: Tests are robust to heteroskedasticity. Significance levels: `.` 0.1, `*` 0.05, `**` 0.01, `***` 0.001.*
 
 </details>
-
-## 5. VAR Model Diagnostics
-
-Before interpreting the model, we must check if its residuals are well-behaved.
-
--   **Serial Correlation (`serial.test`)**: The p-value was 0.385. **Success!** We cannot reject the null of no serial correlation.
--   **Heteroskedasticity (`arch.test`)**: The p-value was 0.0005. **Problem!** We reject the null of no heteroskedasticity. The residuals' variance is not constant.
--   **Normality (`normality.test`)**: The p-value was less than 2.2e-16. **Problem!** The residuals are not normally distributed.
-
-The presence of heteroskedasticity means the standard errors from the default `summary(var_model)` are unreliable. **We must use robust standard errors for valid inference.** A plot of the residuals for each equation visually confirms the non-constant variance.
-
-![VAR Residual Plots](./plots/var_residuals.png)
-
-### 6. VAR Results: Impulse Responses and Causality
 
 To understand the dynamic interplay between the variables, we examine the Impulse Response Functions (IRFs). These trace out the response of one variable to a shock in another over time. We use a wild bootstrap to generate confidence intervals, which is robust to the heteroskedasticity we found in the residuals.
 
