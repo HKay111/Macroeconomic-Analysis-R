@@ -99,7 +99,7 @@ t = -1.1744, Lower-bound I(0) = -3.4250, Upper-bound I(1) = -4.0972, p-value = 0
 alternative hypothesis: Possible cointegration
 ```
 
-**Result: Failure.** The F-statistic (1.307) is far below the critical value lower bound, and the t-statistic (-1.17) is not nearly negative enough. **We fail to reject the null hypothesis of no cointegration.** This means there is no evidence of a stable long-run relationship between the exchange rate, inflation, and the output gap.
+**Result: Failure.** The F-statistic (1.307) is far below the critical value lower bound, and the t-statistic (-1.17) is not nearly negative enough. **We fail to reject the null hypothesis of no co-integration.** This means there is no evidence of a stable long-run relationship between the exchange rate, inflation, and the output gap.
 
 ## 4. A New Approach: The Vector Autoregression (VAR) Model
 
@@ -128,6 +128,48 @@ VARselect(var_data, lag.max = 10, type = "const")
 ```
 
 We proceeded with a `VAR(2)` model.
+
+<details>
+
+<summary>Click to view the full VAR(2) model summary</summary>
+
+------------------------------------------------------------------------
+
+### Table 1: VAR(2) Model - Robust Coefficient Estimates
+
+This table presents the coefficient estimates for each of the three equations in the VAR(2) model. The standard errors have been corrected for heteroskedasticity using the `HC1` method, making the p-values reliable for inference.
+
+| Variable | (1) d_exc_rate | (2) d_Inflation | (3) Output_Gap |
+|:-----------------|:----------------:|:----------------:|:----------------:|
+| **Exchange Rate (t-1)**<br> `d_exc_rate.l1` | 0.093<br>(0.094) | 0.092<br>(0.061) | -1.242<br>(0.761) |
+| **Inflation (t-1)**<br> `d_Inflation.l1` | -0.065<br>(0.098) | 0.266\*\*<br>(0.089) | 0.333<br>(0.693) |
+| **Output Gap (t-1)**<br> `Output_Gap.l1` | -0.002<br>(0.022) | 0.010<br>(0.022) | 0.473\*\*\*<br>(0.117) |
+| **Exchange Rate (t-2)**<br> `d_exc_rate.l2` | -0.073<br>(0.107) | -0.021<br>(0.073) | -0.052<br>(0.512) |
+| **Inflation (t-2)**<br> `d_Inflation.l2` | 0.052<br>(0.081) | -0.352\*\*\*<br>(0.080) | 0.866<br>(0.682) |
+| **Output Gap (t-2)**<br> `Output_Gap.l2` | 0.016<br>(0.019) | -0.029.<br>(0.018) | 0.137<br>(0.095) |
+| **Constant** | 0.184\*<br>(0.075) | -0.055<br>(0.062) | 0.248<br>(0.392) |
+
+------------------------------------------------------------------------
+
+*Notes: Values in parentheses `()` are robust standard errors. Significance levels: `.` 0.1, `*` 0.05, `**` 0.01, `***` 0.001.*
+
+------------------------------------------------------------------------
+
+### Table 2: Robust Granger Causality Tests (Wald Tests)
+
+This table summarizes the results of the Granger causality tests, which check if past values of one variable have statistically significant power in predicting another variable.
+
+| Null Hypothesis (H₀) | F-Statistic | p-value | Result |
+|:-----------------|:-----------------:|:-----------------:|:-----------------|
+| Inflation does not Granger-cause Exchange Rate | 0.30 | 0.744 | Fail to Reject H₀ |
+| Output Gap does not Granger-cause Inflation | 2.74 | 0.069 . | Reject H₀ at 10% |
+| Exchange Rate does not Granger-cause Output Gap | 1.21 | 0.302 | Fail to Reject H₀ |
+
+------------------------------------------------------------------------
+
+*Notes: Tests are robust to heteroskedasticity. Significance levels: `.` 0.1, `*` 0.05, `**` 0.01, `***` 0.001.*
+
+</details>
 
 ## 5. VAR Model Diagnostics
 
