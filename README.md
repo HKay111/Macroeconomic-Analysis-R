@@ -1,6 +1,6 @@
 # A Modeling Journey: From ARDL to VAR for Macroeconomic Analysis
 
-This document outlines the step-by-step process of an econometric analysis aimed at understanding the dynamic relationships between the monthly exchange rate, inflation, and the output gap. The journey highlights critical modeling decisions, from initial stationarity tests and a failed cointegration analysis to the final implementation and interpretation of a Vector Autoregression (VAR) model.
+This project outlines the step-by-step process of an econometric analysis aimed at understanding the dynamic relationships between the monthly exchange rate, inflation, and the output gap. The journey highlights critical modeling decisions, from initial stationarity tests and a failed cointegration analysis to the final implementation and interpretation of a Vector Autoregression (VAR) model.
 
 ## 1. Objective and Data Preparation
 
