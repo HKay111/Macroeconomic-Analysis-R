@@ -262,30 +262,6 @@ Robust Wald tests were performed to determine if one variable has predictive pow
 -   **Does the Exchange Rate Granger-Cause the Output Gap?**
     -   **Result: NO.** (p-value = 0.988). This relationship is statistically insignificant.
 
-### 4.2. Impulse Response Functions (IRFs)
-
-IRFs trace out the effect of a one-time shock in one variable on the other variables in the system over time. The plots below show these dynamic responses over a 24-month horizon. If the confidence bands (red dotted lines) include zero, the response is not statistically significant.
-
-![Impulse Response Functions from VAR(1) Model](./plots/irf_plot.png)
-
-The IRFs visually confirm the Granger test results. For instance, the top-middle panel (`d_Inflation` -\> `d_exc_rate`) shows a statistically significant initial response, while other relationships like `d_exc_rate` -\> `Output_Gap` (bottom-left panel) are flat and insignificant.
-
-<details>
-
-<summary>Click to see R code for this plot</summary>
-
-``` r
-# Assumes 'var_model' is your fitted VAR(1) object
-irf_results <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95)
-
-# Save the plot to a file
-png("./plots/irf_plot.png", width = 800, height = 700)
-plot(irf_results)
-dev.off()
-```
-
-</details>
-
 ## 5. Conclusion
 
 This econometric analysis successfully built a well-specified `VAR(1)` model to investigate the short-run dynamics between the Indian exchange rate, inflation, and output gap. After ensuring data integrity and validating the model through rigorous diagnostic checks, several key findings emerged:
