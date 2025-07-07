@@ -200,10 +200,3 @@ ggplot(residuals_long, aes(x = Date, y = Residual)) +
 
 ggsave("./plots/var_residuals.png", width = 8, height = 6, bg = "white")
 
-# IRF
-irf_results <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95)
-
-# Now just plot it and save the file
-png("./plots/irf_plot.png", width = 800, height = 700)
-plot(irf_results)
-dev.off()
