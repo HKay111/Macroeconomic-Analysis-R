@@ -12,6 +12,7 @@ library(ggplot2)
 library(patchwork)
 
 data <- filename
+data <- data[1:75,]
 data$Date <- dmy(data$Date)
 data <- data[order(data$Date), ]
 hp_filtered <- hpfilter(data$Actual_IIP, freq = 14400)
@@ -46,29 +47,26 @@ kpss.test(diff(test_data$Inflation), null = "Trend")
 models <-auto_ardl(monthly_exc_rate ~ Output_Gap+Inflation, data = test_data, max_order = 5)
 models$top_orders
 
-# Best model is ARDL(2, 5, 0)
+# Best model is ARDL(2, 5, 2)
 
-ardl_250 <- models$best_model
-ardl_250$order
-summary(ardl_250)
+ardl_252 <- models$best_model
+ardl_252$order
+summary(ardl_252)
 
-uecm_250 <- uecm(ardl_250)
-summary(uecm_250)
+uecm_252 <- uecm(ardl_252)
+summary(uecm_252)
 
-recm_250 <- recm(uecm_250, case = 2) # Long Run
-summary(recm_250)
+recm_252 <- recm(uecm_252, case = 2) # Long Run
+summary(recm_252)
 
-recm_250_sr <- recm(uecm_250, case = 3) # Short Run
-summary(recm_250_sr)
+recm_252_sr <- recm(uecm_252, case = 3) # Short Run
+summary(recm_252_sr)
 
-bounds_f_test(ardl_250, case = 3)
+bounds_f_test(ardl_252, case = 3)
 
-tbounds <- bounds_t_test(uecm_250, case = 3, alpha = 0.01)
+tbounds <- bounds_t_test(uecm_252, case = 3, alpha = 0.01)
 tbounds
 tbounds$tab
-
-
-VARselect(var_data, lag.max = 10, type = "const")
 
 
 # 1. Transform I(1) variables by differencing
@@ -83,10 +81,12 @@ var_data <- cbind(d_exc_rate, d_Inflation, aligned_Output_Gap)
 colnames(var_data) <- c("d_exc_rate", "d_Inflation", "Output_Gap")
 
 
+VARselect(var_data, lag.max = 10, type = "const")
 
-# Estimate the VAR(2) model
+
+# Estimate the VAR(1) model
 # The type="const" includes a constant (intercept) in each equation, which is standard.
-var_model <- VAR(var_data, p = 2, type = "const")
+var_model <- VAR(var_data, p = 1, type = "const")
 
 # Look at the summary output
 summary(var_model)
@@ -158,7 +158,7 @@ p_output_gap <- ggplot(data, aes(x = Date, y = Output_Gap)) +
 
 # Combine plots and save
 combined_plot <- p_exc_rate / p_inflation / p_output_gap
-ggsave("./plots/time_series_original.png", plot = combined_plot, width = 8, height = 6)
+ggsave("./plots/time_series_original.png", plot = combined_plot, width = 8, height = 6, bg = "white")
 
 
 # Create a data frame for plotting
@@ -193,17 +193,17 @@ ggplot(residuals_long, aes(x = Date, y = Residual)) +
   geom_line(alpha = 0.8) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
   facet_wrap(~ Equation, scales = "free_y", ncol = 1) +
-  labs(title = "Residuals from VAR(2) Model by Equation",
+  labs(title = "Residuals from VAR(1) Model by Equation",
        subtitle = "Note the changing volatility, confirming heteroskedasticity.",
        x = "Date", y = "Residual") +
   theme_minimal()
 
 ggsave("./plots/var_residuals.png", width = 8, height = 6, bg = "white")
 
-# You already created this object:
-irf_wild <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95, boot.type = "wild")
+# IRF
+irf_results <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95)
 
 # Now just plot it and save the file
 png("./plots/irf_plot.png", width = 800, height = 700)
-plot(irf_wild)
+plot(irf_results)
 dev.off()

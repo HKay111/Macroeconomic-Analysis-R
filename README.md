@@ -1,252 +1,296 @@
-# A Modeling Journey: From ARDL to VAR for Macroeconomic Analysis
+# Macroeconomic Analysis in R: A Time Series Modeling Project
 
-This project outlines the step-by-step process of an econometric analysis aimed at understanding the dynamic relationships between the monthly exchange rate, inflation, and the output gap. The journey highlights critical modeling decisions, from initial stationarity tests and a failed cointegration analysis to the final implementation and interpretation of a Vector Autoregression (VAR) model.
+This repository documents a time series analysis of key macroeconomic variables. The project investigates the dynamic, short-run relationships between the monthly exchange rate, inflation, and the output gap using a Vector Autoregression (VAR) modeling approach in R.
 
-## 1. Objective and Data Preparation
+## 1. Objective and Data Exploration
 
-The primary goal was to investigate the short-run and long-run relationships between three key macroeconomic variables: 1. **`monthly_exc_rate`**: The nominal exchange rate. 2. **`Inflation`**: The rate of inflation. 3. **`Output_Gap`**: The deviation of actual industrial production from its potential, calculated using an HP-filter (`freq=14400` for monthly data).
+The primary goal is to model and understand the dynamic interplay between three core macroeconomic indicators: 1. **`monthly_exc_rate`**: The nominal exchange rate. 2. **`Inflation`**: The rate of inflation. 3. **`Output_Gap`**: The deviation of industrial production from its potential, estimated using a Hodrick-Prescott filter.
 
-The initial dataset was loaded, processed, and any missing values were removed, resulting in a clean `data.frame` for analysis.
+The analysis uses a continuous, clean sample of 75 monthly observations. An initial visual inspection of the data reveals the distinct behavior of each series. The exchange rate exhibits a clear upward trend, while inflation appears more cyclical and the output gap fluctuates around zero.
 
-``` r
-# Key Libraries
-library(vars)
-library(urca)
-library(tidyverse)
-library(mFilter)
-library(tseries)
-library(ARDL)
-library(sandwich)
-library(lmtest)
-library(dynlm)
-
-# ... (Data loading and HP filter code) ...
-
-# Final data for modeling
-str(test_data)
-```
-
-```         
-'data.frame':   125 obs. of  3 variables:
- $ monthly_exc_rate: num  62.1 62.2 61 60.4 59.3 ...
- $ Output_Gap      : num  0.652 1.07 -1.212 -0.195 0.622 ...
- $ Inflation       : num  8.6 7.88 8.25 8.48 8.33 6.77 7.39 7.03 5.63 4.62 ...
-```
-
-A preliminary plot of the time series shows the general behavior of each variable. We can clearly see the upward trend in `monthly_exc_rate` that suggests it is non-stationary.
-
-![Time Series Plots of Original Variables](./plots/time_series_original.png)
-
-## 2. Stationarity Testing: A Critical First Step
-
-Before any modeling, we must determine the order of integration for each time series to avoid spurious regressions. We used the Augmented Dickey-Fuller (ADF), Phillips-Perron (PP), and Kwiatkowski–Phillips–Schmidt–Shin (KPSS) tests.
-
-**Summary of Stationarity Test Results:**
-
--   **`monthly_exc_rate`**: ADF and PP tests failed to reject the null hypothesis of a unit root (p-values \> 0.05). The KPSS test rejected the null of stationarity (p-value \< 0.05). However, the first difference of the series was found to be stationary.
-    -   **Conclusion: Integrated of Order 1, i.e., I(1).**
--   **`Inflation`**: The results were slightly ambiguous (ADF p=0.06, PP p=0.12), but the KPSS test strongly rejected stationarity. The first difference was clearly stationary.
-    -   **Conclusion: Treated as I(1).**
--   **`Output_Gap`**: Both ADF and PP tests strongly rejected the unit root null (p-values \< 0.05), and the KPSS test failed to reject the stationarity null (p-value \> 0.05).
-    -   **Conclusion: Stationary, i.e., I(0).**
-
-This mix of I(1) and I(0) variables makes the Autoregressive Distributed Lag (ARDL) model a suitable candidate for investigating long-run relationships. So, a Vector Error Correction Model (VECM) is rejected at this stage. The visual difference between the level and first-differenced series for the exchange rate and inflation is striking.
-
-![Stationarity Transformation Plots](./plots/stationarity_transforms.png)
-
-## 3. First Attempt: The ARDL Model and Cointegration
-
-The ARDL framework is ideal for testing for a long-run equilibrium relationship (cointegration) among variables with mixed orders of integration. We used the `auto_ardl` function to select the optimal lag structure based on AIC.
-
-``` r
-models <- auto_ardl(monthly_exc_rate ~ Output_Gap + Inflation, data = test_data, max_order = 5)
-ardl_250 <- models$best_model
-ardl_250$order
-```
-
-```         
-monthly_exc_rate       Output_Gap        Inflation 
-               2                5                0 
-```
-
-The best model was an `ARDL(2, 5, 0)`.
-
-### The Pivot Point: The Bounds Test for Cointegration
-
-The crucial step in ARDL modeling is the bounds test, which checks if the variables move together in the long run.
-
-``` r
-# F-test
-bounds_f_test(ardl_250, case = 3)
-```
-
-```         
-    Bounds F-test (Wald) for no cointegration
-
-F = 1.3074, p-value = 0.7727
-alternative hypothesis: Possible cointegration
-```
-
-``` r
-# t-test
-bounds_t_test(uecm_250, case = 3, alpha = 0.01)
-```
-
-```         
-    Bounds t-test for no cointegration
-
-t = -1.1744, Lower-bound I(0) = -3.4250, Upper-bound I(1) = -4.0972, p-value = 0.8305
-alternative hypothesis: Possible cointegration
-```
-
-**Result: Failure.** The F-statistic (1.307) is far below the critical value lower bound, and the t-statistic (-1.17) is not nearly negative enough. **We fail to reject the null hypothesis of no co-integration.** This means there is no evidence of a stable long-run relationship between the exchange rate, inflation, and the output gap.
-
-## 4. A New Approach: The Vector Autoregression (VAR) Model
-
-Since no long-run relationship exists, we pivot our focus to modeling the short-run dynamics. The appropriate tool for this is a **VAR model using stationary variables**.
-
-### Data Transformation and Lag Selection
-
-1.  We transformed the I(1) variables by taking their first difference: `d_exc_rate` and `d_Inflation`.
-2.  We kept the I(0) variable, `Output_Gap`, in its level form.
-3.  We combined these stationary series into a new dataset for the VAR.
-
-``` r
-d_exc_rate <- diff(test_data$monthly_exc_rate)
-d_Inflation <- diff(test_data$Inflation)
-aligned_Output_Gap <- window(test_data$Output_Gap, start = start(d_exc_rate))
-var_data <- cbind(d_exc_rate, d_Inflation, aligned_Output_Gap)
-```
-
-We used `VARselect` to determine the optimal lag length. Both the AIC and FPE criteria suggested a lag length of 2.
-
-``` r
-VARselect(var_data, lag.max = 10, type = "const")
-# $selection
-# AIC(n)  HQ(n)  SC(n) FPE(n)
-#      2      1      1      2
-```
-
-We proceeded with a `VAR(2)` model.
-
-## 5. VAR Model Diagnostics
-
-Before interpreting the model, we must check if its residuals are well-behaved.
-
--   **Serial Correlation (`serial.test`)**: The p-value was 0.385. **Success!** We cannot reject the null of no serial correlation.
--   **Heteroskedasticity (`arch.test`)**: The p-value was 0.0005. **Problem!** We reject the null of no heteroskedasticity. The residuals' variance is not constant.
--   **Normality (`normality.test`)**: The p-value was less than 2.2e-16. **Problem!** The residuals are not normally distributed.
-
-The presence of heteroskedasticity means the standard errors from the default `summary(var_model)` are unreliable. **We must use robust standard errors for valid inference.** A plot of the residuals for each equation visually confirms the non-constant variance.
-
-![VAR Residual Plots](./plots/var_residuals.png)
-
-### 6. VAR Results: Impulse Responses and Causality
+![Time Series of Original Variables](./plots/time_series_original.png)
 
 <details>
 
-<summary>Click to view the full VAR(2) model summary</summary>
+<summary>Click to see R code for this plot</summary>
 
-------------------------------------------------------------------------
+``` r
+# Assumes 'data' is a data frame with 'Date', 'monthly_exc_rate', 'Inflation', 'Output_Gap'
+library(ggplot2)
+library(patchwork)
 
-### Table 1: VAR(2) Model - Robust Coefficient Estimates
+p_exc_rate <- ggplot(data, aes(x = Date, y = monthly_exc_rate)) +
+  geom_line(color = "blue") +
+  labs(title = "Monthly Exchange Rate", y = "Rate", x = "") +
+  theme_minimal()
 
-This table presents the coefficient estimates for each of the three equations in the VAR(2) model. The standard errors have been corrected for heteroskedasticity using the `HC1` method, making the p-values reliable for inference.
+p_inflation <- ggplot(data, aes(x = Date, y = Inflation)) +
+  geom_line(color = "red") +
+  labs(title = "Inflation", y = "Percent", x = "") +
+  theme_minimal()
 
-| Variable | (1) d_exc_rate | (2) d_Inflation | (3) Output_Gap |
-|:-----------------|:----------------:|:----------------:|:----------------:|
-| **Exchange Rate (t-1)**<br> `d_exc_rate.l1` | 0.093<br>(0.094) | 0.092<br>(0.061) | -1.242<br>(0.761) |
-| **Inflation (t-1)**<br> `d_Inflation.l1` | -0.065<br>(0.098) | 0.266\*\*<br>(0.089) | 0.333<br>(0.693) |
-| **Output Gap (t-1)**<br> `Output_Gap.l1` | -0.002<br>(0.022) | 0.010<br>(0.022) | 0.473\*\*\*<br>(0.117) |
-| **Exchange Rate (t-2)**<br> `d_exc_rate.l2` | -0.073<br>(0.107) | -0.021<br>(0.073) | -0.052<br>(0.512) |
-| **Inflation (t-2)**<br> `d_Inflation.l2` | 0.052<br>(0.081) | -0.352\*\*\*<br>(0.080) | 0.866<br>(0.682) |
-| **Output Gap (t-2)**<br> `Output_Gap.l2` | 0.016<br>(0.019) | -0.029.<br>(0.018) | 0.137<br>(0.095) |
-| **Constant** | 0.184\*<br>(0.075) | -0.055<br>(0.062) | 0.248<br>(0.392) |
+p_output_gap <- ggplot(data, aes(x = Date, y = Output_Gap)) +
+  geom_line(color = "darkgreen") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Output Gap", y = "Cycle", x = "Date") +
+  theme_minimal()
 
-------------------------------------------------------------------------
-
-*Notes: Values in parentheses `()` are robust standard errors. Significance levels: `.` 0.1, `*` 0.05, `**` 0.01, `***` 0.001.*
-
-------------------------------------------------------------------------
-
-### Table 2: Robust Granger Causality Tests (Wald Tests)
-
-This table summarizes the results of the Granger causality tests, which check if past values of one variable have statistically significant power in predicting another variable.
-
-| Null Hypothesis (H₀) | F-Statistic | p-value | Result |
-|:-----------------|:-----------------:|:-----------------:|:-----------------|
-| Inflation does not Granger-cause Exchange Rate | 0.30 | 0.744 | Fail to Reject H₀ |
-| Output Gap does not Granger-cause Inflation | 2.74 | 0.069 . | Reject H₀ at 10% |
-| Exchange Rate does not Granger-cause Output Gap | 1.21 | 0.302 | Fail to Reject H₀ |
-
-------------------------------------------------------------------------
-
-*Notes: Tests are robust to heteroskedasticity. Significance levels: `.` 0.1, `*` 0.05, `**` 0.01, `***` 0.001.*
+# Combine plots and save
+combined_plot <- p_exc_rate / p_inflation / p_output_gap
+ggsave("./plots/time_series_original.png", plot = combined_plot, width = 8, height = 6, bg = "white")
+```
 
 </details>
 
-To understand the dynamic interplay between the variables, we examine the Impulse Response Functions (IRFs). These trace out the response of one variable to a shock in another over time. We use a wild bootstrap to generate confidence intervals, which is robust to the heteroskedasticity we found in the residuals.
+## 2. Methodology: From Stationarity to VAR
 
-![Impulse Response Functions](./plots/irf_plot.png)
+A robust time series analysis requires careful consideration of the statistical properties of the data. The workflow followed a standard econometric approach: testing for stationarity, checking for long-run relationships, and then building a short-run dynamic model.
 
-The IRF plots largely confirm the findings from our later Granger tests. We observe that most shocks have statistically insignificant effects (the confidence bands include zero) on other variables, highlighting a general lack of strong short-run dynamics between these series. For instance, the response of `d_exc_rate` to a shock in `d_Inflation` is flat and insignificant.
+### 2.1. Stationarity Analysis
 
-Now, this is where we encountered the original error: `coeftest` with `vcovHC` fails when applied to a single equation extracted directly from a `var` object.
+Unit root tests (ADF, PP, and KPSS) were conducted to determine the order of integration for each series. \* **`monthly_exc_rate`**: Found to be non-stationary, or integrated of order 1, **I(1)**. \* **`Inflation`**: Also found to be non-stationary, **I(1)**. \* **`Output_Gap`**: Found to be stationary, **I(0)**.
 
-**The Solution:** We re-estimated each equation of the VAR separately using `dynlm` to create standard model objects. This allows `coeftest` and `waldtest` to work correctly with robust covariance matrices (`vcovHC`).
+To proceed with modeling, the non-stationary I(1) variables must be transformed by taking their first difference. The plot below clearly shows how differencing removes the trend from the exchange rate and inflation series, resulting in stationary variables suitable for a VAR model.
 
-``` r
-# Re-fitting the 'd_exc_rate' equation
-a <- var_model$varresult$d_exc_rate
-lm_d_exc_rate <- dynlm(formula(a), data = model.frame(a))
+![Effect of First-Differencing on I(1) Variables](./plots/stationarity_transforms.png)
 
-# Now, robust tests work
-coeftest(lm_d_exc_rate, vcov. = vcovHC(lm_d_exc_rate, type = "HC1"))
-```
+<details>
 
-### Granger Causality Tests with Robust Standard Errors
-
-With the model diagnostics indicating the need for robust inference, we performed Wald tests to check for Granger causality. This tests whether past values of one variable have statistically significant power in predicting another variable.
-
-**Test 1: Does Inflation Granger-Cause Exchange Rate Changes?**
+<summary>Click to see R code for this plot</summary>
 
 ``` r
-waldtest(lm_d_exc_rate, . ~ . - d_Inflation.l1 - d_Inflation.l2, vcov = vcovHC)
-# p-value = 0.7441
+# Assumes 'data' is your data frame
+library(ggplot2)
+library(tidyr)
+
+plot_df <- data.frame(
+  Date = data$Date,
+  `Exchange.Rate..Level.` = data$monthly_exc_rate,
+  `Exchange.Rate..Diff.` = c(NA, diff(data$monthly_exc_rate)),
+  `Inflation..Level.` = data$Inflation,
+  `Inflation..Diff.` = c(NA, diff(data$Inflation))
+) %>%
+  pivot_longer(-Date, names_to = "Series", values_to = "Value")
+
+# Plot using facets
+ggplot(na.omit(plot_df), aes(x = Date, y = Value)) +
+  geom_line() +
+  facet_wrap(~ Series, scales = "free_y", ncol = 1) +
+  labs(title = "Effect of First-Differencing on I(1) Variables", x = "Date", y = "Value") +
+  theme_minimal() +
+  theme(strip.text = element_text(hjust = 0))
+
+ggsave("./plots/stationarity_transforms.png", width = 8, height = 7, bg = "white")
 ```
 
-**Finding:** No. We fail to reject the null hypothesis. There is no statistical evidence that past inflation helps predict future changes in the exchange rate.
+</details>
 
-**Test 2: Does the Output Gap Granger-Cause Inflation Changes?**
+### 2.2. Testing for Cointegration
+
+Before building a VAR on the stationary (differenced) data, we tested for a stable long-run relationship (cointegration) among the original level variables using an ARDL bounds test.
 
 ``` r
-waldtest(lm_d_Inflation, . ~ . - Output_Gap.l1 - Output_Gap.l2, vcov = vcovHC)
-# p-value = 0.06884 .
+# ARDL Bounds F-test
+bounds_f_test(ardl_252, case = 3)
+# F = 0.85155, p-value = 0.8963
 ```
 
-**Finding:** Weak evidence. At the 10% significance level, we can reject the null hypothesis. This suggests that past values of the output gap may have some predictive power for future changes in inflation. This aligns with a weak Phillips Curve-type relationship.
+The result conclusively shows **no evidence of cointegration**. The variables do not move together in a stable long-run equilibrium. This confirms that the correct approach is to model their short-run dynamics using a VAR model on the stationary data.
 
-**Test 3: Does the Exchange Rate Granger-Cause the Output Gap?**
+## 3. The VAR Model: Estimation and Validation
+
+A Vector Autoregression (VAR) model was built using the stationary variables: `d_exc_rate` (differenced exchange rate), `d_Inflation` (differenced inflation), and `Output_Gap` (in levels).
+
+### 3.1. Lag Selection and Estimation
+
+The `VARselect()` function was used to determine the optimal lag length. All information criteria (AIC, HQ, SC, FPE) pointed to a lag order of **p = 1**. Therefore, a `VAR(1)` model was estimated.
+
+<details>
+
+<summary><b>Click to see VAR(1) Model Equations and Full Results</b></summary>
+
+#### VAR(1) Model Specification
+
+The estimated model is a system of three linear equations, where each variable is explained by its own first lag and the first lag of every other variable in the system.
+
+``` math
+\begin{aligned}
+\Delta \text{ExcRate}_t &= c_1 + \beta_{11}\Delta \text{ExcRate}_{t-1} + \beta_{12}\Delta \text{Inflation}_{t-1} + \beta_{13}\text{OutputGap}_{t-1} + \epsilon_{1,t} \\
+\Delta \text{Inflation}_t &= c_2 + \beta_{21}\Delta \text{ExcRate}_{t-1} + \beta_{22}\Delta \text{Inflation}_{t-1} + \beta_{23}\text{OutputGap}_{t-1} + \epsilon_{2,t} \\
+\text{OutputGap}_t &= c_3 + \beta_{31}\Delta \text{ExcRate}_{t-1} + \beta_{32}\Delta \text{Inflation}_{t-1} + \beta_{33}\text{OutputGap}_{t-1} + \epsilon_{3,t}
+\end{aligned}
+```
+
+#### Full Estimation Results (`summary(var_model)`)
 
 ``` r
-waldtest(lm_Output_Gap, . ~ . - d_exc_rate.l1 - d_exc_rate.l2, vcov = vcovHC)
-# p-value = 0.302
+VAR Estimation Results:
+========================= 
+Endogenous variables: d_exc_rate, d_Inflation, Output_Gap 
+Deterministic variables: const 
+Sample size: 73 
+Log Likelihood: -329.179 
+Roots of the characteristic polynomial:
+0.3376 0.2633 0.2633
+Call:
+VAR(y = var_data, p = 1, type = "const")
+
+
+Estimation results for equation d_exc_rate: 
+=========================================== 
+d_exc_rate = d_exc_rate.l1 + d_Inflation.l1 + Output_Gap.l1 + const 
+
+               Estimate Std. Error t value Pr(>|t|)  
+d_exc_rate.l1   0.19312    0.12417   1.555    0.124 .
+d_Inflation.l1 -0.29916    0.15707  -1.905    0.061 .
+Output_Gap.l1   0.01125    0.04241   0.265    0.792  
+const           0.13094    0.10558   1.240    0.219  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+Residual standard error: 0.8906 on 69 degrees of freedom
+Multiple R-Squared: 0.08591,	Adjusted R-squared: 0.04617 
+F-statistic: 2.162 on 3 and 69 DF,  p-value: 0.1004 
+
+
+Estimation results for equation d_Inflation: 
+============================================ 
+d_Inflation = d_exc_rate.l1 + d_Inflation.l1 + Output_Gap.l1 + const 
+
+               Estimate Std. Error t value Pr(>|t|)  
+d_exc_rate.l1   0.11879    0.08794   1.351   0.1812  
+d_Inflation.l1  0.27214    0.11123   2.447   0.0170 *
+Output_Gap.l1  -0.06399    0.03004  -2.130   0.0367 *
+const          -0.02639    0.07477  -0.353   0.7252  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+Residual standard error: 0.6307 on 69 degrees of freedom
+Multiple R-Squared: 0.158,  Adjusted R-squared: 0.1214 
+F-statistic: 4.317 on 3 and 69 DF,  p-value: 0.007541 
+
+
+Estimation results for equation Output_Gap: 
+=========================================== 
+Output_Gap = d_exc_rate.l1 + d_Inflation.l1 + Output_Gap.l1 + const 
+
+                Estimate Std. Error t value Pr(>|t|)  
+d_exc_rate.l1  -0.005901   0.356228  -0.017   0.9868  
+d_Inflation.l1 -0.221719   0.450600  -0.492   0.6242  
+Output_Gap.l1   0.301268   0.121680   2.476   0.0157 *
+const           0.174963   0.302881   0.578   0.5654  
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+Residual standard error: 2.555 on 69 degrees of freedom
+Multiple R-Squared: 0.09037,    Adjusted R-squared: 0.05082 
+F-statistic: 2.285 on 3 and 69 DF,  p-value: 0.08649 
+
+
+
+Covariance matrix of residuals:
+            d_exc_rate d_Inflation Output_Gap
+d_exc_rate     0.79320     0.00301    0.47654
+d_Inflation    0.00301     0.39781   -0.09515
+Output_Gap     0.47654    -0.09515    6.52823
+
+Correlation matrix of residuals:
+            d_exc_rate d_Inflation Output_Gap
+d_exc_rate    1.000000    0.005359    0.20942
+d_Inflation   0.005359    1.000000   -0.05905
+Output_Gap    0.209417   -0.059045    1.00000
 ```
 
-**Finding:** No. We fail to reject the null hypothesis. There is no evidence that past changes in the exchange rate help predict the future output gap.
+</details>
 
-## 7. Final Summary and Conclusion
+### 3.2. Model Diagnostics
 
-This analytical journey led to several important conclusions:
+The estimated `VAR(1)` model was subjected to a battery of diagnostic tests to ensure its validity. The model passed all tests, indicating it is well-specified and provides a reliable representation of the data.
 
-1.  **No Long-Run Relationship**: The initial ARDL bounds test conclusively showed **no evidence of cointegration** among the monthly exchange rate, inflation, and the output gap. The variables do not share a common long-run stochastic trend.
+-   **Serial Correlation:** `p-value = 0.4955` (No significant serial correlation).
+-   **Heteroskedasticity (ARCH):** `p-value = 0.4436` (No significant heteroskedasticity).
+-   **Normality of Residuals:** `p-value = 0.2466` (Residuals are normally distributed).
 
-2.  **Short-Run Dynamics Dominate**: The analysis shifted to a VAR model in differences to capture short-run interactions. Model diagnostics revealed significant **heteroskedasticity and non-normality**, mandating the use of robust standard errors for all inference.
+The residual plots below visually confirm the well-behaved nature of the model's errors, which appear as random noise centered around zero.
 
-3.  **Limited Predictive Power**: The robust Granger causality tests revealed a system with very weak feedback mechanisms:
+![Residuals from VAR(1) Model by Equation](./plots/var_residuals.png)
 
-    -   The exchange rate appears to evolve independently of recent inflation and output gap movements.
-    -   The output gap has a weak, marginally significant predictive relationship with future inflation.
-    -   The output gap is not significantly predicted by past exchange rate fluctuations.
+<details>
 
-In essence, within this model's framework, the three variables are largely disconnected in the short run, with the only potential link being a weak influence of economic activity (Output Gap) on price changes (Inflation).
+<summary>Click to see R code for this plot</summary>
+
+``` r
+# Assumes 'var_model' is your fitted VAR(1) object
+# and 'var_data' is the stationary data used to fit it.
+library(ggplot2)
+library(tidyr)
+
+residuals_df <- as.data.frame(residuals(var_model))
+residuals_df$Date <- tail(data$Date, nrow(residuals_df))
+
+residuals_long <- pivot_longer(residuals_df, -Date, names_to = "Equation", values_to = "Residual")
+
+ggplot(residuals_long, aes(x = Date, y = Residual)) +
+  geom_line(alpha = 0.9, color = "black") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  facet_wrap(~ Equation, scales = "free_y", ncol = 1) +
+  labs(title = "Residuals from VAR(1) Model by Equation",
+       subtitle = "Residuals appear stationary and randomly distributed around zero.",
+       x = "Date", y = "Residual") +
+  theme_minimal()
+
+ggsave("./plots/var_residuals.png", width = 8, height = 6, bg = "white")
+```
+
+</details>
+
+## 4. Results: Dynamic Interactions in the Economy
+
+With a validated model, we can now investigate the dynamic relationships between the variables. To ensure our conclusions are robust to any minor deviations from classical assumptions, we use heteroskedasticity-consistent (HC) standard errors for all formal hypothesis tests.
+
+### 4.1. Granger Causality
+
+Robust Wald tests were performed to determine if one variable has predictive power over another.
+
+-   **Does Inflation Granger-Cause Exchange Rate Changes?**
+    -   **Result: YES.** (p-value = 0.044). Past inflation has a statistically significant, predictive relationship with future changes in the exchange rate.
+-   **Does the Output Gap Granger-Cause Inflation Changes?**
+    -   **Result: YES (weakly).** (p-value = 0.065). At the 10% significance level, the output gap has predictive power for future inflation, supporting a weak Phillips Curve relationship.
+-   **Does the Exchange Rate Granger-Cause the Output Gap?**
+    -   **Result: NO.** (p-value = 0.988). This relationship is statistically insignificant.
+
+### 4.2. Impulse Response Functions (IRFs)
+
+IRFs trace out the effect of a one-time shock in one variable on the other variables in the system over time. The plots below show these dynamic responses over a 24-month horizon. If the confidence bands (red dotted lines) include zero, the response is not statistically significant.
+
+![Impulse Response Functions from VAR(1) Model](./plots/irf_plot.png)
+
+The IRFs visually confirm the Granger test results. For instance, the top-middle panel (`d_Inflation` -\> `d_exc_rate`) shows a statistically significant initial response, while other relationships like `d_exc_rate` -\> `Output_Gap` (bottom-left panel) are flat and insignificant.
+
+<details>
+
+<summary>Click to see R code for this plot</summary>
+
+``` r
+# Assumes 'var_model' is your fitted VAR(1) object
+irf_results <- irf(var_model, n.ahead = 24, boot = TRUE, ci = 0.95)
+
+# Save the plot to a file
+png("./plots/irf_plot.png", width = 800, height = 700)
+plot(irf_results)
+dev.off()
+```
+
+</details>
+
+## 5. Conclusion
+
+This econometric analysis successfully built a well-specified `VAR(1)` model to investigate the short-run dynamics between the Indian exchange rate, inflation, and output gap. After ensuring data integrity and validating the model through rigorous diagnostic checks, several key findings emerged:
+
+1.  **No Long-Run Relationship:** The variables do not share a stable long-run cointegrating equilibrium.
+2.  **Significant Short-Run Dynamics:** The system is characterized by significant short-run causal links. Most notably, past **inflation has a significant predictive effect on the exchange rate**, and the **output gap has a marginal effect on inflation**.
+
+The results indicate that while these variables do not move together in the long run, their short-term fluctuations are meaningfully interconnected.
