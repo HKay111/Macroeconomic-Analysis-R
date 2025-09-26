@@ -1,3 +1,5 @@
+# This is strictly a coding exercise and may have mistakes.
+
 # Macroeconomic Analysis in R: A Time Series Modeling Project
 
 This repository documents a time series analysis of key macroeconomic variables. The project investigates the dynamic, short-run relationships between the monthly exchange rate, inflation, and the output gap using a Vector Autoregression (VAR) modeling approach in R.
