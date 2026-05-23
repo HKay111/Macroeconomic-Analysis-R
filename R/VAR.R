@@ -11,7 +11,7 @@ library(dynlm)
 library(ggplot2)
 library(patchwork)
 
-data <- filename
+data <- read.csv("data/filename.csv")
 data <- data[1:75,]
 data$Date <- dmy(data$Date)
 data <- data[order(data$Date), ]
@@ -130,14 +130,19 @@ coeftest(lm_d_exc_rate, vcov. = vcovHC(lm_d_exc_rate, type = "HC1"))
 coeftest(lm_d_Inflation, vcov. = vcovHC(lm_d_Inflation, type = "HC1"))
 coeftest(lm_Output_Gap, vcov. = vcovHC(lm_Output_Gap, type = "HC1"))
 
-# Test: Does d_Inflation Granger-cause d_exc_rate?
-waldtest(lm_d_exc_rate, . ~ . - d_Inflation.l1 - d_Inflation.l2, vcov = vcovHC)
+# --- GRANGER CAUSALITY (using vars package built-in) ---
 
-# Test: Does Output_Gap Granger-cause d_Inflation?
-waldtest(lm_d_Inflation, . ~ . - Output_Gap.l1 - Output_Gap.l2, vcov = vcovHC)
+# Does d_Inflation Granger-cause d_exc_rate?
+cat("Granger causality: d_Inflation -> d_exc_rate\n")
+causality(var_model, cause = "d_Inflation")$Granger
 
-# Test: Does d_exc_rate Granger-cause Output_Gap?
-waldtest(lm_Output_Gap, . ~ . - d_exc_rate.l1 - d_exc_rate.l2, vcov = vcovHC)
+# Does Output_Gap Granger-cause d_Inflation?
+cat("\nGranger causality: Output_Gap -> d_Inflation\n")
+causality(var_model, cause = "Output_Gap")$Granger
+
+# Does d_exc_rate Granger-cause Output_Gap?
+cat("\nGranger causality: d_exc_rate -> Output_Gap\n")
+causality(var_model, cause = "d_exc_rate")$Granger
 
 # Create individual plots
 p_exc_rate <- ggplot(data, aes(x = Date, y = monthly_exc_rate)) +
@@ -194,7 +199,7 @@ ggplot(residuals_long, aes(x = Date, y = Residual)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
   facet_wrap(~ Equation, scales = "free_y", ncol = 1) +
   labs(title = "Residuals from VAR(1) Model by Equation",
-       subtitle = "Note the changing volatility, confirming heteroskedasticity.",
+       subtitle = "Residuals appear stationary and randomly distributed around zero.",
        x = "Date", y = "Residual") +
   theme_minimal()
 

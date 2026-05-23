@@ -240,8 +240,8 @@ ggplot(residuals_long, aes(x = Date, y = Residual)) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
   facet_wrap(~ Equation, scales = "free_y", ncol = 1) +
   labs(title = "Residuals from VAR(1) Model by Equation",
-       subtitle = "Residuals appear stationary and randomly distributed around zero.",
-       x = "Date", y = "Residual") +
+        subtitle = "Residuals appear stationary and randomly distributed around zero.",
+        x = "Date", y = "Residual") +
   theme_minimal()
 
 ggsave("./plots/var_residuals.png", width = 8, height = 6, bg = "white")
@@ -255,20 +255,22 @@ With a validated model, we can now investigate the dynamic relationships between
 
 ### 4.1. Granger Causality
 
-Robust Wald tests were performed to determine if one variable has predictive power over another.
+Granger causality tests were performed using the `vars` package's `causality()` function to determine if past values of one variable significantly improve predictions of another.
 
--   **Does Inflation Granger-Cause Exchange Rate Changes?**
-    -   **Result: YES.** (p-value = 0.044). Past inflation has a statistically significant, predictive relationship with future changes in the exchange rate.
--   **Does the Output Gap Granger-Cause Inflation Changes?**
-    -   **Result: YES (weakly).** (p-value = 0.065). At the 10% significance level, the output gap has predictive power for future inflation, supporting a weak Phillips Curve relationship.
--   **Does the Exchange Rate Granger-Cause the Output Gap?**
-    -   **Result: NO.** (p-value = 0.988). This relationship is statistically insignificant.
+| Direction | F-Statistic | p-value | Result |
+|-----------|-------------|---------|--------|
+| Inflation → Exchange Rate | 1.818 | 0.1649 | **Not significant** |
+| Output Gap → Inflation | 2.308 | 0.1020 | **Not significant** |
+| Exchange Rate → Output Gap | 0.914 | 0.4024 | **Not significant** |
+
+**None of the Granger causality tests are statistically significant at the 5% level (or even 10% for Output Gap → Inflation).** The data does not support a predictive relationship running from inflation to exchange rate changes, nor from the output gap to inflation, nor from exchange rate to output gap.
 
 ## 5. Conclusion
 
-This econometric analysis successfully built a well-specified `VAR(1)` model to investigate the short-run dynamics between the Indian exchange rate, inflation, and output gap. After ensuring data integrity and validating the model through rigorous diagnostic checks, several key findings emerged:
+This econometric analysis built a well-specified `VAR(1)` model to investigate the short-run dynamics between the Indian exchange rate, inflation, and output gap. After validating the model through rigorous diagnostic checks, the following findings emerged:
 
-1.  **No Long-Run Relationship:** The variables do not share a stable long-run cointegrating equilibrium.
-2.  **Significant Short-Run Dynamics:** The system is characterized by significant short-run causal links. Most notably, past **inflation has a significant predictive effect on the exchange rate**, and the **output gap has a marginal effect on inflation**.
+1.  **No Long-Run Relationship:** The variables do not share a stable long-run cointegrating equilibrium (bounds F-test p = 0.896).
+2.  **No Significant Granger Causal Relationships:** None of the three directional relationships tested are statistically significant at conventional levels. We cannot conclude that past inflation predicts exchange rate changes, that the output gap drives inflation, or that exchange rate movements precede output gap fluctuations.
+3.  **Model Diagnostics Pass:** The VAR(1) model passes tests for serial correlation, heteroskedasticity, and normality of residuals, indicating a correctly specified representation of the short-run dynamics — even if those dynamics show no statistically significant causal links.
 
-The results indicate that while these variables do not move together in the long run, their short-term fluctuations are meaningfully interconnected.
+The results suggest that while these macroeconomic variables may be related in their levels (both are I(1)), their short-term fluctuations are not sufficiently interconnected to support a finding of predictive causality in any direction. The system is characterized by independent short-run noise around stable long-run paths that do not cointegrate.
