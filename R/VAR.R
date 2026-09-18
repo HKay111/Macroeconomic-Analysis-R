@@ -1,207 +1,159 @@
-library(vars)
-library(urca)
-library(tidyverse)
-library(dplyr)
-library(mFilter)
-library(tseries)
-library(ARDL)
-library(sandwich)
-library(lmtest)
-library(dynlm)
+# Re-analysis of the Macroeconomic Analysis (VAR) project.
+#
+# The original script had two problems. First, the IIP cycle was shifted one
+# month relative to the differenced variables: diff() keeps months 2-75 while
+# window() kept months 1-74, so the VAR mixed up the timing. Second, the
+# vars::causality() output was reported as three pairwise tests, but it is
+# actually a block test of one variable against all the other equations.
+# This version aligns the data properly and reports the tests for what they
+# are.
+#
+# The sample stops in March 2020, because the next rows in the data file jump
+# to June 2020 and the file is not continuous after that point.
+
+library(readr)
+library(lubridate)
 library(ggplot2)
 library(patchwork)
 
-data <- read.csv("data/filename.csv")
-data <- data[1:75,]
+library(vars)
+library(urca)
+library(ARDL)
+library(mFilter)
+
+library(sandwich)
+library(sessioninfo)
+
+set.seed(123)
+
+# --- 1. Data ----------------------------------------------------------------
+
+data <- read_csv("data/filename.csv", show_col_types = FALSE)
 data$Date <- dmy(data$Date)
 data <- data[order(data$Date), ]
-hp_filtered <- hpfilter(data$Actual_IIP, freq = 14400)
-data$Potential_IIP <- hp_filtered$trend
-data$Output_Gap    <- hp_filtered$cycle
+data <- data[data$Date <= "2020-03-01", ]
+data$IIP_growth_yoy <- data$Actual_IIP
+data$iip_cycle <- as.numeric(hpfilter(data$IIP_growth_yoy, freq = 14400)$cycle)
 
-test_data <- data %>% select("monthly_exc_rate", "Output_Gap", "Inflation")
-test_data <- na.omit(test_data)
-str(test_data)
+# The VAR uses changes for the two I(1) variables and the cycle in levels.
+# The cycle is shifted back one month so that all three series are dated the
+# same way.
+var_data <- data.frame(
+  d_exc_rate = diff(data$monthly_exc_rate),
+  d_inflation = diff(data$Inflation),
+  iip_cycle = data$iip_cycle[-1]
+)
 
-# Monthly Exchnage Rate
-adf.test(test_data$monthly_exc_rate)
-pp.test(test_data$monthly_exc_rate)
-pp.test(diff(test_data$monthly_exc_rate))
-kpss.test(test_data$monthly_exc_rate)
-kpss.test(diff(test_data$monthly_exc_rate))
+# --- 2. Plots ---------------------------------------------------------------
 
-# Output Gap
-adf.test(test_data$Output_Gap)
-pp.test(test_data$Output_Gap)
-kpss.test(test_data$Output_Gap)
+p_exc <- ggplot(data, aes(Date, monthly_exc_rate)) +
+  geom_line(colour = "#0072B2") +
+  labs(title = "Monthly exchange rate", y = "INR per USD", x = NULL) +
+  theme_minimal(base_size = 11)
 
+p_inf <- ggplot(data, aes(Date, Inflation)) +
+  geom_line(colour = "#D55E00") +
+  labs(title = "Inflation", y = "Percent", x = NULL) +
+  theme_minimal(base_size = 11)
 
-# Inflation
-adf.test(test_data$Inflation)
-pp.test(test_data$Inflation)
-pp.test(diff(test_data$Inflation))
-kpss.test(test_data$Inflation, null = "Trend")
-kpss.test(diff(test_data$Inflation), null = "Trend")
+p_cyc <- ggplot(data, aes(Date, iip_cycle)) +
+  geom_hline(yintercept = 0, colour = "grey70") +
+  geom_line(colour = "#009E73") +
+  labs(title = "IIP growth cycle (HP)", y = "Percentage points", x = "Date") +
+  theme_minimal(base_size = 11)
 
-# ARDL
-models <-auto_ardl(monthly_exc_rate ~ Output_Gap+Inflation, data = test_data, max_order = 5)
-models$top_orders
+ggsave("plots/time_series_original.png", p_exc / p_inf / p_cyc,
+       width = 8, height = 8, dpi = 300)
 
-# Best model is ARDL(2, 5, 2)
+# Levels and first differences of the two I(1) series
+p1 <- ggplot(data, aes(Date, monthly_exc_rate)) +
+  geom_line(colour = "#0072B2") +
+  labs(title = "Exchange rate (level)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10)
 
-ardl_252 <- models$best_model
-ardl_252$order
-summary(ardl_252)
+p2 <- ggplot(data.frame(Date = data$Date[-1], x = diff(data$monthly_exc_rate)),
+             aes(Date, x)) +
+  geom_line(colour = "#0072B2") +
+  labs(title = "Exchange rate (change)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10)
 
-uecm_252 <- uecm(ardl_252)
-summary(uecm_252)
+p3 <- ggplot(data, aes(Date, Inflation)) +
+  geom_line(colour = "#D55E00") +
+  labs(title = "Inflation (level)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10)
 
-recm_252 <- recm(uecm_252, case = 2) # Long Run
-summary(recm_252)
+p4 <- ggplot(data.frame(Date = data$Date[-1], x = diff(data$Inflation)),
+             aes(Date, x)) +
+  geom_line(colour = "#D55E00") +
+  labs(title = "Inflation (change)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10)
 
-recm_252_sr <- recm(uecm_252, case = 3) # Short Run
-summary(recm_252_sr)
+ggsave("plots/stationarity_transforms.png", (p1 + p2) / (p3 + p4),
+       width = 9, height = 6, dpi = 300)
 
-bounds_f_test(ardl_252, case = 3)
+# --- 3. Unit root tests -----------------------------------------------------
+# ADF with up to 6 lags chosen by AIC, and KPSS. Same deterministic terms for
+# every series: an intercept, no trend.
 
-tbounds <- bounds_t_test(uecm_252, case = 3, alpha = 0.01)
-tbounds
-tbounds$tab
+summary(ur.df(data$monthly_exc_rate, type = "drift", lags = 6, selectlags = "AIC"))
+summary(ur.kpss(data$monthly_exc_rate, type = "mu", lags = "short"))
 
+summary(ur.df(data$Inflation, type = "drift", lags = 6, selectlags = "AIC"))
+summary(ur.kpss(data$Inflation, type = "mu", lags = "short"))
 
-# 1. Transform I(1) variables by differencing
-d_exc_rate <- diff(test_data$monthly_exc_rate)
-d_Inflation <- diff(test_data$Inflation)
+summary(ur.df(data$iip_cycle, type = "drift", lags = 6, selectlags = "AIC"))
+summary(ur.kpss(data$iip_cycle, type = "mu", lags = "short"))
 
-# 2. Align I(0) variables (if any)
-aligned_Output_Gap <- window(test_data$Output_Gap, start = start(d_exc_rate), end = end(d_exc_rate))
+# --- 4. Cointegration -------------------------------------------------------
 
-# 3. Combine into one object for the package
-var_data <- cbind(d_exc_rate, d_Inflation, aligned_Output_Gap)
-colnames(var_data) <- c("d_exc_rate", "d_Inflation", "Output_Gap")
+ardl_model <- auto_ardl(monthly_exc_rate ~ Inflation + iip_cycle,
+                        data = as.data.frame(data), max_order = 5, selection = "AIC")
 
+bounds_f_test(ardl_model$best_model, case = 3, exact = TRUE, R = 20000)
+bounds_t_test(uecm(ardl_model$best_model), case = 3, exact = TRUE, R = 20000)
+
+# --- 5. VAR -----------------------------------------------------------------
 
 VARselect(var_data, lag.max = 10, type = "const")
-
-
-# Estimate the VAR(1) model
-# The type="const" includes a constant (intercept) in each equation, which is standard.
 var_model <- VAR(var_data, p = 1, type = "const")
-
-# Look at the summary output
 summary(var_model)
+roots(var_model)
 
-# 1. Test for serial correlation in the residuals
-# H0: no serial correlation. You want a high p-value.
-serial.test(var_model, lags.pt = 5, type = "PT.asymptotic") # Using 5 lags for the test is a common choice
-
-# 2. Test for heteroskedasticity in the residuals
-# H0: no heteroskedasticity. You want a high p-value.
+serial.test(var_model, lags.pt = 5, type = "PT.asymptotic")
 arch.test(var_model, lags.multi = 5)
-
-# 3. Test for normality of the residuals
-# H0: residuals are normally distributed. You want a high p-value.
 normality.test(var_model)
 
-# 4. Check for structural breaks in the residuals
-plot(stability(var_model))
+png("plots/var_residuals.png", width = 1200, height = 800, res = 150)
+plot.ts(residuals(var_model), main = "VAR residuals")
+dev.off()
 
-# Exchange Rate
-a <- var_model$varresult$d_exc_rate
-a_f <- formula(a)
-a_d <- model.frame(a)
-lm_d_exc_rate <- dynlm(a_f, data = a_d)
+# --- 6. Block Granger tests -------------------------------------------------
+# Each call tests whether one variable helps predict all the other equations
+# together. These are block tests, not pairwise tests.
 
-# Inflation
-b <- var_model$varresult$d_Inflation
-b_f <- formula(b)
-b_d <- model.frame(b)
-lm_d_Inflation <- dynlm(b_f, data = b_d)
-
-# Output Gap
-c <- var_model$varresult$Output_Gap
-c_f <- formula(c)
-c_d <- model.frame(c)
-lm_Output_Gap <- dynlm(c_f, data=c_d)
-
-# --- ROBUST COEFFICIENT TESTS ---
-# Now this will work without error!
-coeftest(lm_d_exc_rate, vcov. = vcovHC(lm_d_exc_rate, type = "HC1"))
-coeftest(lm_d_Inflation, vcov. = vcovHC(lm_d_Inflation, type = "HC1"))
-coeftest(lm_Output_Gap, vcov. = vcovHC(lm_Output_Gap, type = "HC1"))
-
-# --- GRANGER CAUSALITY (using vars package built-in) ---
-
-# Does d_Inflation Granger-cause d_exc_rate?
-cat("Granger causality: d_Inflation -> d_exc_rate\n")
-causality(var_model, cause = "d_Inflation")$Granger
-
-# Does Output_Gap Granger-cause d_Inflation?
-cat("\nGranger causality: Output_Gap -> d_Inflation\n")
-causality(var_model, cause = "Output_Gap")$Granger
-
-# Does d_exc_rate Granger-cause Output_Gap?
-cat("\nGranger causality: d_exc_rate -> Output_Gap\n")
+causality(var_model, cause = "d_inflation")$Granger
+causality(var_model, cause = "iip_cycle")$Granger
 causality(var_model, cause = "d_exc_rate")$Granger
 
-# Create individual plots
-p_exc_rate <- ggplot(data, aes(x = Date, y = monthly_exc_rate)) +
-  geom_line(color = "blue") +
-  labs(title = "Monthly Exchange Rate", y = "Rate", x = "") +
-  theme_minimal()
+causality(var_model, cause = "d_inflation", vcov. = vcovHC)$Granger
+causality(var_model, cause = "iip_cycle", vcov. = vcovHC)$Granger
+causality(var_model, cause = "d_exc_rate", vcov. = vcovHC)$Granger
 
-p_inflation <- ggplot(data, aes(x = Date, y = Inflation)) +
-  geom_line(color = "red") +
-  labs(title = "Inflation", y = "Percent", x = "") +
-  theme_minimal()
+# --- 7. Robustness: drop March 2020 -----------------------------------------
+# March 2020 is the first pandemic month and it drives the non-normal
+# residuals in the full sample.
 
-p_output_gap <- ggplot(data, aes(x = Date, y = Output_Gap)) +
-  geom_line(color = "darkgreen") +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Output Gap", y = "Cycle", x = "Date") +
-  theme_minimal()
+data_short <- data[data$Date <= "2020-02-01", ]
+var_data_short <- data.frame(
+  d_exc_rate = diff(data_short$monthly_exc_rate),
+  d_inflation = diff(data_short$Inflation),
+  iip_cycle = as.numeric(hpfilter(data_short$IIP_growth_yoy, freq = 14400)$cycle)[-1]
+)
 
-# Combine plots and save
-combined_plot <- p_exc_rate / p_inflation / p_output_gap
-ggsave("./plots/time_series_original.png", plot = combined_plot, width = 8, height = 6, bg = "white")
+var_short <- VAR(var_data_short, p = 1, type = "const")
+normality.test(var_short)
+causality(var_short, cause = "d_inflation")$Granger
 
+# --- 8. Package versions ----------------------------------------------------
 
-# Create a data frame for plotting
-plot_df <- data.frame(
-  Date = data$Date,
-  `Exchange Rate (Level)` = data$monthly_exc_rate,
-  `Exchange Rate (Diff)` = c(NA, diff(data$monthly_exc_rate)),
-  `Inflation (Level)` = data$Inflation,
-  `Inflation (Diff)` = c(NA, diff(data$Inflation))
-) %>%
-  pivot_longer(-Date, names_to = "Series", values_to = "Value")
-
-# Plot using facets
-ggplot(na.omit(plot_df), aes(x = Date, y = Value)) +
-  geom_line(aes(color = Series)) +
-  facet_wrap(~ Series, scales = "free_y", ncol = 1) +
-  labs(title = "Effect of First-Differencing on I(1) Variables", x = "Date", y = "Value") +
-  theme_minimal() +
-  theme(legend.position = "none")
-
-ggsave("./plots/stationarity_transforms.png", width = 8, height = 6, bg = "white")
-
-# Get residuals from the VAR model
-residuals_df <- as.data.frame(residuals(var_model))
-residuals_df$Date <- tail(data$Date, nrow(residuals_df)) # Align dates
-
-# Pivot for ggplot
-residuals_long <- pivot_longer(residuals_df, -Date, names_to = "Equation", values_to = "Residual")
-
-# Create the plot
-ggplot(residuals_long, aes(x = Date, y = Residual)) +
-  geom_line(alpha = 0.8) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-  facet_wrap(~ Equation, scales = "free_y", ncol = 1) +
-  labs(title = "Residuals from VAR(1) Model by Equation",
-       subtitle = "Residuals appear stationary and randomly distributed around zero.",
-       x = "Date", y = "Residual") +
-  theme_minimal()
-
-ggsave("./plots/var_residuals.png", width = 8, height = 6, bg = "white")
-
+writeLines(capture.output(session_info()), "session_info.txt")
